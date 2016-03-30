@@ -53,11 +53,11 @@ from whoosh.analysis import CharsetFilter, StopFilter, LanguageAnalyzer
 from whoosh.qparser import QueryParser
 from mako.template import Template
 
-verbose = False
+verbose = True
 
 logging.basicConfig(filename='zimply.log', filemode='w',
                     format="%(levelname)s: %(message)s",
-                    level=logging.INFO if verbose else logging.ERROR)
+                    level=logging.DEBUG if verbose else logging.INFO)
 
 #####
 # Definition of a number of basic structures/functions to simplify the code
@@ -403,12 +403,12 @@ class ZIMFile:
     def __len__(self):  # retrieve the number of articles in the ZIM file
         return self.header_fields['articleCount']
 
-    def __iter__(self):  # return an iterator closure that gives the articles one by one
+    def __iter__(self):  # return an iterator closure that gives the articles one by one (URL, title, and index)
         for idx in range(self.header_fields['articleCount']):
             entry = self._read_directory_entry_by_index(idx)  # get the Directory Entry
             if entry['namespace'] == "A":
                 entry['fullUrl'] = full_url(entry['namespace'], entry['url'])  # add the full url to the entry
-                yield entry['fullUrl'], entry['title']
+                yield entry['fullUrl'], entry['title'], idx
 
     def close(self):
         self.file.close()
@@ -502,7 +502,10 @@ class ZIMRequestHandler(BaseHTTPRequestHandler):
                 with ZIMRequestHandler.reverse_index.searcher() as searcher:  # with the index searcher ...
                     hits = searcher.search(q, limit=None)  # get all the hits for the query q
                     for hit in hits:  # for each hit ...
-                        body += "<a href=\"/" + hit["url"] + "\" >" + hit["title"] + "</a><br />"  # ... show its link
+                        # abuse an internal function to read the directory entry by index (rather than e.g. URL)
+                        entry = self.zim._read_directory_entry_by_index(hit["index"])  # get the Directory Entry
+                        url = full_url(entry['namespace'], entry['url'])  # add the full url to the entry
+                        body += "<a href=\"/" + url + "\" >" + hit["title"] + "</a><br />"  # ... show its link
 
         else:  # if we did not achieve success
             self.send_response(404)  # respond with a not found code
@@ -521,11 +524,12 @@ class ZIMRequestHandler(BaseHTTPRequestHandler):
 class ZIMServer:
     def __init__(self, filename, index_file="", template="", port=80, encoding="utf-8"):
         self._zim_file = ZIMFile(filename, encoding)  # create the object to access the ZIM file
+        # get the language of the ZIM file and convert it to ISO639_1 or default to "en" if unsupported
         lang = iso639_3to1.get(self._zim_file.metadata()["language"].decode(encoding=encoding, errors="ignore"), "en")
         logging.info("A ZIM file in the language " + str(lang) + " (ISO639-1) was found, " +
                      "containing " + str(len(self._zim_file)) + " articles.")
-        ana = LanguageAnalyzer(lang, cachesize=100) | CharsetFilter(accent_map) | StopFilter(minsize=3)
-        self._schema = Schema(title=TEXT(stored=True, analyzer=ana, phrase=False), url=STORED)
+        ana = LanguageAnalyzer(lang, cachesize=100) | CharsetFilter(accent_map) | StopFilter(minsize=5)
+        self._schema = Schema(title=TEXT(stored=True, analyzer=ana, phrase=False), index=STORED)
         index_file = os.path.join(os.path.dirname(filename), "index.idx") if not index_file else index_file
         logging.info("The index file is determined to be located at " + str(index_file) + ".")
 
@@ -539,17 +543,18 @@ class ZIMServer:
     def _bootstrap(self, index_file, flush_at=100000):
         if not os.path.exists(index_file):  # check whether the index exists
             logging.info("No index was found at " + str(index_file) + ", so now creating the index.")
-            logging.info("The index file is estimated at " + convert_size(len(self._zim_file) * 125) + ".")
+            logging.info("The index file is estimated at " + convert_size(len(self._zim_file) * 110) + ".")
             os.mkdir(index_file)  # if not, create a directory for it
             ix = create_in(index_file, self._schema)  # create the index file based on the schema for the index
             print("Please wait as the index is created, this can take quite some time!")
 
             articles = iter(self._zim_file)  # get an iterator to access all the articles
             count = 1
-            for url, title in articles:  # retrieve the articles one by one
+            for url, title, idx in articles:  # retrieve the articles one by one
                 if count % flush_at == 1:  # if we don't have one, create a new index writer
                     writer = ix.writer(procs=1, limitmb=64, multisegment=False)
-                writer.add_document(title=title, url=url)  # add the title and URL to the index
+                writer.add_document(title=title, index=idx)  # add the title and URL to the index
+                logging.debug("indexing " + title + " with URL " + url)
                 if count % flush_at == 0:  # check whether the flush limit is reached
                     writer.commit()  # if so, perform a commit to flush the results to file
                 count += 1
@@ -562,4 +567,7 @@ class ZIMServer:
         self._zim_file.close()
 
 # most settings are defined here, except for the logging file which is defined below the import statements at the top
-server = ZIMServer("wiki.zim", index_file="index.idx", template="template.html", port=9454)
+server = ZIMServer("/Users/kimbauters/Desktop/simple.zim",
+                   index_file="/Users/kimbauters/Desktop/test/simple2.idx",
+                   template="template.html",
+                   port=9454)
