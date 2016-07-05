@@ -3,21 +3,21 @@
 #  which can be seen in some of the main structures used in this project,
 #  yet it has been developed independently and is not considered a fork
 #  of the project. For more information on the Internet in a Box project,
-#  please have a look at https://github.com/braddockcg/internet-in-a-box .
+#  do have a look at https://github.com/braddockcg/internet-in-a-box .
 
 
 # Copyright (c) 2016, Kim Bauters
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 # 1. Redistributions of source code must retain the above copyright notice, this
 #    list of conditions and the following disclaimer.
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 #    this list of conditions and the following disclaimer in the documentation
 #    and/or other materials provided with the distribution.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 # ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 # WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -28,32 +28,32 @@
 # ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-# 
+#
 # The views and conclusions contained in the software and documentation are those
 # of the authors and should not be interpreted as representing official policies,
 # either expressed or implied, of the FreeBSD Project.
 
 
 import io
+import logging
+import lzma
 import os
 import re
-import lzma
-import logging
+import sqlite3
+import time
 import urllib
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from math import floor, pow, log
-from struct import Struct, pack, unpack
 from collections import namedtuple
 from functools import partial, lru_cache
-# required packages are whoosh (for indexing) and mako (for templating)
-from whoosh.fields import Schema, TEXT, STORED
-from whoosh.index import create_in, open_dir
-from whoosh.support.charset import accent_map
-from whoosh.analysis import CharsetFilter, StopFilter, LanguageAnalyzer
-from whoosh.qparser import QueryParser
-from mako.template import Template
+from math import floor, pow, log
+from struct import Struct, pack, unpack
 
-verbose = True
+# non-standard required packages are gevent and falcon (for its web server), and make (for templating)
+from mako.template import Template
+from gevent import monkey, pywsgi
+monkey.patch_all()  # make sure to do the monkey-patching before loading the falcon package!
+import falcon
+
+verbose = False
 
 logging.basicConfig(filename='zimply.log', filemode='w',
                     format="%(levelname)s: %(message)s",
@@ -331,7 +331,7 @@ class ZIMFile:
         directory_block = self.redirectEntryBlock if fields[0] == 0xffff else self.articleEntryBlock  # get block class
         return directory_block.unpack_from_file(self.file, offset)  # unpack and return the desired Directory Block
 
-    def _read_directory_entry_by_index(self, index):  # returns DirectoryBlock - either Article Entry or Redirect Entry
+    def read_directory_entry_by_index(self, index):  # returns DirectoryBlock - either Article Entry or Redirect Entry
         offset = self._read_url_offset(index)  # find the offset for the given index
         directory_values = self._read_directory_entry(offset)  # read the entry at that offset
         directory_values["index"] = index  # set the index in the list of values
@@ -343,7 +343,7 @@ class ZIMFile:
         return cluster_data.read_blob(blob_index)  # return the data read from the cluster at the given blob index
 
     def _get_article_by_index(self, index, follow_redirect=True):
-        entry = self._read_directory_entry_by_index(index)  # get the info from the DirectoryBlock at the given index
+        entry = self.read_directory_entry_by_index(index)  # get the info from the DirectoryBlock at the given index
         if 'redirectIndex' in entry.keys():  # check if we have a Redirect Entry
             if follow_redirect:  # if we follow up on redirects, return the article it is pointing to
                 logging.debug("redirect to " + str(entry['redirectIndex']))
@@ -357,7 +357,7 @@ class ZIMFile:
     def _get_entry_by_url(self, namespace, url, linear=False):
         if linear:  # if we are performing a linear search ...
             for idx in range(self.header_fields['articleCount']):  # ... simply iterate over all articles
-                entry = self._read_directory_entry_by_index(idx)  # get the info from the DirectoryBlock at that index
+                entry = self.read_directory_entry_by_index(idx)  # get the info from the DirectoryBlock at that index
                 if entry['url'] == url and entry['namespace'] == namespace:  # if we found the article ...
                     return entry, idx  # return the DirectoryBlock entry and the index of the entry
             return None, None  # return None, None if we could not find the entry
@@ -370,7 +370,7 @@ class ZIMFile:
 
             while front <= end and not found:  # continue as long as the boundaries don't cross and we haven't found it
                 middle = floor((front + end) / 2)  # determine the middle index
-                entry = self._read_directory_entry_by_index(middle)
+                entry = self.read_directory_entry_by_index(middle)
                 logging.debug("checking " + entry['url'])
                 found_title = full_url(entry['namespace'], entry['url'])
                 if found_title == title:
@@ -380,7 +380,7 @@ class ZIMFile:
                         front = middle + 1  # move the front index to middle (+ 1 to ensure boundaries can be crossed)
                     else:  # if the middle falls too late ...
                         end = middle - 1  # move the end index to middle (- 1 to ensure boundaries can be crossed)
-            return (self._read_directory_entry_by_index(middle), middle) if found else (None, None)
+            return (self.read_directory_entry_by_index(middle), middle) if found else (None, None)
 
     def get_article_by_url(self, namespace, url, follow_redirect=True):
         entry, idx = self._get_entry_by_url(namespace, url)  # get the entry
@@ -392,7 +392,7 @@ class ZIMFile:
     def metadata(self):
         metadata = {}
         for i in range(self.header_fields['articleCount'] - 1, -1, -1):  # iterate backwards over the entries
-            entry = self._read_directory_entry_by_index(i)  # get the entry
+            entry = self.read_directory_entry_by_index(i)  # get the entry
             if entry['namespace'] == 'M':  # check that it is still metadata
                 m_name = entry['url'].lower()  # turn the key to lowercase as per Kiwix standards
                 metadata[m_name] = self._get_article_by_index(i)[0]  # get the data, which is encoded as an article
@@ -405,7 +405,7 @@ class ZIMFile:
 
     def __iter__(self):  # return an iterator closure that gives the articles one by one (URL, title, and index)
         for idx in range(self.header_fields['articleCount']):
-            entry = self._read_directory_entry_by_index(idx)  # get the Directory Entry
+            entry = self.read_directory_entry_by_index(idx)  # get the Directory Entry
             if entry['namespace'] == "A":
                 entry['fullUrl'] = full_url(entry['namespace'], entry['url'])  # add the full url to the entry
                 yield entry['fullUrl'], entry['title'], idx
@@ -418,22 +418,71 @@ class ZIMFile:
 
 
 #####
+# a BM25 ranker, used to determine the score of results returned in search queries.
+#####
+
+
+class BM25:
+    # see https://en.wikipedia.org/wiki/Okapi_BM25 for information on the Best Match 25 algorithm
+
+    def __init__(self, k1=1.2, b=0.75):
+        self.k1 = k1  # set the k1 ...
+        self.b = b  # ... and b free parameter
+
+    def calculate_scores(self, query, corpus):
+        """ Calculate the BM25 scores for all the documents in the corpus given the query.
+        :param query: a string containing the words that were looked for.
+        :param corpus: a list of strings, each string corresponding to a result returned based on the query.
+        :return: a list of scores (higher is better), in the same order as the documents in the corpus. """
+
+        corpus_size = len(corpus)  # the total number of documents in the corpus
+        query = query.lower()  # turn the query itself into lowercase
+        corpus = [document.lower() for document in corpus]  # also turn each document into lowercase
+
+        # determine the average number of words in each document (simply count the number of spaces)
+        avgdl = float(sum([document.count(" ") + 1 for document in corpus])) / len(corpus)
+        query_terms = []
+        for term in query.split(" "):  # split up the query in its individual terms/words
+            frequency = 0  # assume this term does not occur in any document
+            for document in corpus:  # now iterate over each document in the corpus ...
+                # ... and tally up the number of documents the term occurs in
+                frequency += 1 if document.find(term) > -1 else 0
+            query_terms.append((term, frequency))
+
+        result = []  # prepare a list to keep the resulting scores
+        for document in corpus:  # we are now ready to calculate the score of each document in the corpus
+            total_score = 0
+            for term_frequency in query_terms:  # for every term ...
+                term, frequency = term_frequency  # ... get the term and its frequency
+                # determine the IDF score (numerator and denominator swapped to achieve a positive score)
+                idf = log((frequency + 0.5)/(corpus_size - frequency + 0.5))
+
+                doc_frequency = document.count(term)  # count how often the term occurs in the document itself
+                total_score += idf * ((doc_frequency * (self.k1 + 1)) /
+                                      (doc_frequency + self.k1 * 1 - self.b + self.b * ((document.count(" ")+1)/avgdl)))
+            # once the score for all terms is summed up, add this score to the result list
+            result.append(total_score)
+
+        return result
+
+
+#####
 # The supporting classes to provide the HTTP server. This includes the template
 #  and the actual request handler that uses the ZIM file to retrieve the desired page, images, CSS, etc.
 #####
 
-class ZIMRequestHandler(BaseHTTPRequestHandler):
+class ZIMRequestHandler:
     zim = None  # provide for a class variable to store the ZIM file object
     reverse_index = None  # provide a class variable to store the index file
     schema = None  # provide another class variable to store the schema for the index file
     template = None  # store the location of the template file in a class variable
     encoding = ""  # the encoding, stored in a class variable, for the ZIM file contents
 
-    def do_GET(self):
-        """ Process a HTTP GET request. An object is this class is created whenever an HTTP request is generated.
-            This method is triggered when the request is of the GET type. This method will redirect the user,
-            based on the request, to the index/search/correct page, or an error page if the resource is unavailable. """
-        _, location, _ = self.requestline.split()  # retrieve the location provided in the GET request
+    # Process a HTTP GET request. An object is this class is created whenever an HTTP request is generated.
+    # This method is triggered when the request is of any type, typically a GET. This method will redirect the user,
+    # based on the request, to the index/search/correct page, or an error page if the resource is unavailable.
+    def on_get(self, request, response):
+        location = request.relative_uri
         location = urllib.parse.unquote(location)  # replace the escaped characters by their corresponding string values
         components = location.split("?")
         navigation_location = None
@@ -474,9 +523,8 @@ class ZIMRequestHandler(BaseHTTPRequestHandler):
         template = Template(filename=ZIMRequestHandler.template)
         result = body = head = title = ""  # preset the result and all variables used in the template
         if success:  # if we achieved success, i.e. we found the requested resource
-            self.send_response(200)  # respond with a success code
-            self.send_header("Content-type", "text/HTML" if search else article.mimetype)  # set the right content type
-            self.end_headers()
+            response.status = falcon.HTTP_200  # respond with a success code
+            response.content_type = "text/HTML" if search else article.mimetype  # set the right content type
             if not navigation_location:  # check if the article location is already set
                     navigation_location = "browse"  # if not default to "browse" to indicate a non-search, non-main page
 
@@ -496,77 +544,96 @@ class ZIMRequestHandler(BaseHTTPRequestHandler):
             else:  # if we did have a search form
                 title = "search results for >> " + " ".join(keywords)  # show the search query in the title
                 logging.info("searching for the keywords >> " + " ".join(keywords))
-                qp = QueryParser("title", schema=ZIMRequestHandler.schema)  # load the parser for the given schema
-                q = qp.parse(" ".join(keywords))  # use the keywords to search the index
+                # qp = QueryParser("title", schema=ZIMRequestHandler.schema)  # load the parser for the given schema
+                # q = qp.parse(" ".join(keywords))  # use the keywords to search the index
 
-                with ZIMRequestHandler.reverse_index.searcher() as searcher:  # with the index searcher ...
-                    hits = searcher.search(q, limit=None)  # get all the hits for the query q
-                    for hit in hits:  # for each hit ...
+                cursor = ZIMRequestHandler.reverse_index.cursor()
+                search_for = "* AND ".join(keywords) + "*"
+                cursor.execute('''SELECT docid FROM papers WHERE title MATCH ? ''', [search_for])
+
+                results = cursor.fetchall()
+                if not results:  # if we didn't get any results ...
+                    body = "no results found for: " + " <i>" + " ".join(keywords) + "</i>"  # ... let the user know
+                else:  # otherwise ...
+                    titles = []
+                    for row in results:  # ... iterate over all the results
                         # abuse an internal function to read the directory entry by index (rather than e.g. URL)
-                        entry = self.zim._read_directory_entry_by_index(hit["index"])  # get the Directory Entry
+                        entry = self.zim.read_directory_entry_by_index(row[0])  # get the Directory Entry
                         url = full_url(entry['namespace'], entry['url'])  # add the full url to the entry
-                        body += "<a href=\"/" + url + "\" >" + hit["title"] + "</a><br />"  # ... show its link
+                        # body += "<a href=\"/" + url + "\" >" + entry['title'] + "</a><br />"  # ... show its link
+                        titles.append((entry['title'], url))
+
+                    bm25 = BM25()
+                    scores = bm25.calculate_scores(" ".join(keywords), [title[0] for title in titles])
+                    weighted = zip(titles, scores)
+                    weighted_result = sorted(weighted, key=lambda x: x[1], reverse=True)
+
+                    for item in weighted_result:  # ... iterate over all the results
+                        body += "<a href=\"/" + item[0][1] + "\">" + item[0][0] + "</a><br />"  # ... show its link
 
         else:  # if we did not achieve success
-            self.send_response(404)  # respond with a not found code
-            self.send_header("Content-type", "text/HTML")
-            self.end_headers()
+            response.status = falcon.HTTP_404
+            response.content_type = "text/HTML"
             title = "Page 404"
             body = "requested resource not found"
 
         if not result:  # if the result hasn't been prefilled ...
             result = template.render(location=navigation_location, body=body, head=head, title=title)  # render template
-            self.wfile.write(bytes(result, encoding=ZIMRequestHandler.encoding))  # push the completed data
+            response.data = bytes(result, encoding=ZIMRequestHandler.encoding)
         else:
-            self.wfile.write(result)  # if result is already filled, push it through as-is (i.e. binary resource)
+            response.data = result  # if result is already filled, push it through as-is (i.e. binary resource)
 
 
 class ZIMServer:
     def __init__(self, filename, index_file="", template="", port=80, encoding="utf-8"):
         self._zim_file = ZIMFile(filename, encoding)  # create the object to access the ZIM file
         # get the language of the ZIM file and convert it to ISO639_1 or default to "en" if unsupported
-        lang = iso639_3to1.get(self._zim_file.metadata()["language"].decode(encoding=encoding, errors="ignore"), "en")
+        default_iso = bytes("eng", encoding=encoding)
+        iso639 = self._zim_file.metadata().get("language", default_iso).decode(encoding=encoding, errors="ignore")
+        lang = iso639_3to1.get(iso639, "en")
         logging.info("A ZIM file in the language " + str(lang) + " (ISO639-1) was found, " +
                      "containing " + str(len(self._zim_file)) + " articles.")
-        ana = LanguageAnalyzer(lang, cachesize=100) | CharsetFilter(accent_map) | StopFilter(minsize=5)
-        self._schema = Schema(title=TEXT(stored=True, analyzer=ana, phrase=False), index=STORED)
         index_file = os.path.join(os.path.dirname(filename), "index.idx") if not index_file else index_file
         logging.info("The index file is determined to be located at " + str(index_file) + ".")
 
         ZIMRequestHandler.zim = self._zim_file  # set this object to a class variable of ZIMRequestHandler
-        ZIMRequestHandler.schema = self._schema  # set the index schema to a class variable of ZIMRequestHandler
+        # ZIMRequestHandler.schema = self._schema  # set the index schema to a class variable of ZIMRequestHandler
         ZIMRequestHandler.reverse_index = self._bootstrap(index_file)  # set (and create) the index to a class variable
         ZIMRequestHandler.template = template  # set the template to a class variable of ZIMRequestHandler
         ZIMRequestHandler.encoding = encoding  # set the encoding to a class variable of ZIMRequestHandler
-        HTTPServer(('', port), ZIMRequestHandler).serve_forever()  # start up the HTTP server on the desired port
 
-    def _bootstrap(self, index_file, flush_at=100000):
+        app = falcon.API()
+        main = ZIMRequestHandler()
+        app.add_sink(main.on_get, prefix='/')  # create a simple sync that forwards all requests; TODO: only allow GET
+        print("up and running on http://localhost:" + str(port))
+        pywsgi.WSGIServer(("", port), app).serve_forever()   # start up the HTTP server on the desired port
+
+    def _bootstrap(self, index_file):
+
         if not os.path.exists(index_file):  # check whether the index exists
             logging.info("No index was found at " + str(index_file) + ", so now creating the index.")
-            logging.info("The index file is estimated at " + convert_size(len(self._zim_file) * 110) + ".")
-            os.mkdir(index_file)  # if not, create a directory for it
-            ix = create_in(index_file, self._schema)  # create the index file based on the schema for the index
-            print("Please wait as the index is created, this can take quite some time!")
+            print("Please wait as the index is created, this can take quite some time! – " + time.strftime('%X %x'))
 
+            db = sqlite3.connect(index_file)
+            cursor = db.cursor()
+            cursor.execute('''PRAGMA CACHE_SIZE = -65536''')  # limit memory usage to 64MB
+            # create a contentless virtual table using full-text search (FTS4) and the porter tokeniser
+            cursor.execute('''CREATE VIRTUAL TABLE papers USING fts4(content="", title, tokenize=porter);''')
             articles = iter(self._zim_file)  # get an iterator to access all the articles
-            count = 1
+
             for url, title, idx in articles:  # retrieve the articles one by one
-                if count % flush_at == 1:  # if we don't have one, create a new index writer
-                    writer = ix.writer(procs=1, limitmb=64, multisegment=False)
-                writer.add_document(title=title, index=idx)  # add the title and URL to the index
-                logging.debug("indexing " + title + " with URL " + url)
-                if count % flush_at == 0:  # check whether the flush limit is reached
-                    writer.commit()  # if so, perform a commit to flush the results to file
-                count += 1
-            if count - 1 % flush_at != 0:
-                writer.commit()  # at the end, as needed, perform a commit to save the final index to file
-            print("Index created, continuing.")
-        return open_dir(index_file)
+                cursor.execute('''INSERT INTO papers(docid, title) VALUES (?, ?)''', (idx, title))  # and add them
+            db.commit()  # once all articles are added, commit the changes to the database
+
+            print("Index created, continuing – " + time.strftime('%X %x'))
+            db.close()
+        return sqlite3.connect(index_file)  # return an open connection to the SQLite database
 
     def __exit__(self, *_):
         self._zim_file.close()
 
 # most settings are defined here, except for the logging file which is defined below the import statements at the top
 server = ZIMServer("wiki.zim",
+                   index_file="wiki.idx",
                    template="template.html",
                    port=9454)
