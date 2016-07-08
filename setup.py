@@ -19,7 +19,7 @@ setup(
         license='MIT',
         url="https://github.com/kimbauters/ZIMply",
         download_url='https://github.com/kimbauters/ZIMply/tarball/1.0.0',
-        keyword=['zim', 'wiki', 'wikipedia'],
+        keywords=['zim', 'wiki', 'wikipedia'],
         py_modules=["zimply"],
         install_requires=["gevent", "falcon"],
         classifiers=[
