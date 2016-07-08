@@ -29,5 +29,6 @@ setup(
         ],
         package_data={
             'sample': ['wiki.zim'],
+            'template': ['template.html'],
         },
 )
