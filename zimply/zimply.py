@@ -38,6 +38,7 @@ import io
 import logging
 import lzma
 import os
+import pkg_resources
 import re
 import sqlite3
 import time
@@ -585,7 +586,8 @@ class ZIMRequestHandler:
 
 
 class ZIMServer:
-    def __init__(self, filename, index_file="", template="", port=80, encoding="utf-8"):
+    def __init__(self, filename, index_file="",
+                 template=pkg_resources.resource_filename(__name__, 'template.html'), port=9454, encoding="utf-8"):
         self._zim_file = ZIMFile(filename, encoding)  # create the object to access the ZIM file
         # get the language of the ZIM file and convert it to ISO639_1 or default to "en" if unsupported
         default_iso = bytes("eng", encoding=encoding)
@@ -632,8 +634,11 @@ class ZIMServer:
     def __exit__(self, *_):
         self._zim_file.close()
 
-# most settings are defined here, except for the logging file which is defined below the import statements at the top
-server = ZIMServer("wiki.zim",
-                   index_file="wiki.idx",
-                   template="template.html",
-                   port=9454)
+# to start a ZIM server using ZIMply, all you need to provide is the location of the ZIM file:
+# server = ZIMServer("wiki.zim")
+
+# alternatively, you can specify your own location for the index, use a custom template, or change the port:
+# server = ZIMServer("wiki.zim", "index.idx", "template.html", 80)
+
+# all arguments can also be named, so you can also choose to simply change the port:
+# server = ZIMServer("wiki.zim", port=80)
