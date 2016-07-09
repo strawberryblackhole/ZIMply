@@ -16,7 +16,7 @@ setup(
         author_email="kim.bauters@gmail.com",
         license='MIT',
         url="https://github.com/kimbauters/ZIMply",
-        download_url='https://github.com/kimbauters/ZIMply/tarball/1.0.0',
+        download_url='https://github.com/kimbauters/ZIMply/tarball/1.0.5',
         keywords=['zim', 'wiki', 'wikipedia'],
         install_requires=["gevent>=1.1.1", "falcon>=1.0.0", "mako>=1.0.3"],
         classifiers=[
