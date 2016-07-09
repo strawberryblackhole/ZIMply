@@ -4,16 +4,40 @@
 
     sudo apt-get -qq python3 python3-setuptools python3-dev python3-pip
 
-**ZIMply** depends on `gevent <http://www.gevent.org>`__ (for networking), `falcon <https://falconframework.org>`__ (for the web service), and `mako <http://www.makotemplates.org>`__ (for templating). The easiest way to install these dependencies is by using:
+Once you have Python 3 up and running, the easiest way to install **ZIMply* is through pip:
+
+.. code:: bash
+
+    pip install zimply
+
+When you have both Python 2.* and Python 3.* installed on your system, you may need to replace `pip` with `pip3` depending on your setup. All you need to do then is download a ZIM file from `this site <https://www.mirrorservice.org/sites/download.kiwix.org/zim/wikipedia/>`__ and use a command such as: **(Be careful! Executing the next command downloads the full English Wikipedia, which is a massive file. Instead, replace the url with your desired ZIM file!)**
+
+.. code:: bash
+
+    curl -o wiki.zim https://www.mirrorservice.org/sites/download.kiwix.org/zim/wikipedia/wikipedia_en_all_2016-05.zim
+
+All that's left is for you to create your own Python file to start the server:
+
+.. code:: python
+
+    from zimply import ZIMServer
+    ZIMServer("wiki.zim")
+
+That's is all there is to it. Using the default settings, you can now access your offline Wiki from http://localhost:9454 - spelling out as :WIKI on a keypad. To access **ZIMply** from another system, you need to know the IP address of the system that is running **ZIMply**. You can access it by visiting http://ip_address:9454 where you replace ip_address with the actual IP address.
+
+*Note:* the first time you run **ZIMply**, it will take care of creating the index to enable searching. **This can take some time**. Unless you see error messages, you can assume that it all works as planned and **ZIMply** will notify you as soon as the index is fully created. The largest ZIM file (the full English Wikipedia) takes about half an hour to index on a core i7 processor, and can take over half a day on a Raspberry Pi Zero. Creating the index is a step that only needs to be done once though, and subsequent restarts of **ZIMply** will only take a matter of seconds. **ZIMply** is heavily optimised, and *will* run comfortably on a Raspberry Pi Zero.
+
+To modify the default settings, simply call ZIMServer with your desired options:
+
+.. code:: python
+
+    from zimply import ZIMServer
+    ZIMServer("wiki.zim", index_file="index.idx", template="template.html", port=9454, encoding="utf-8")
+
+Want to tinker with the code yourself? **ZIMply** depends on `gevent <http://www.gevent.org>`__ (for networking), `falcon <https://falconframework.org>`__ (for the web service), and `mako <http://www.makotemplates.org>`__ (for templating). The easiest way to install these dependencies is by using:
 
 .. code:: bash
 
     sudo pip install gevent falcon mako
 
-When you have both Python 2.* and Python 3.* installed on your system, you may need to replace `pip` with `pip3` depending on your setup.
-
-**ZIMply** can be used as-is and does not require any configuration out of the box. It suffices to delete the `wiki.zim` file and replace it with your ZIM file of choice which you rename to `wiki.zim` (**do delete the index.idx** if it has already been created). A large collection of ZIM files is available from http://download.kiwix.org/zim/ . If you run **ZIMply** on your local system, you can access it by visiting http://localhost:9454 - spelling out as :WIKI on a keypad. To access **ZIMply** from another system, you need to know the IP address of the system that is running **ZIMply**. You can then easily access it by visiting http://ip_address:9454 where you replace ip_address with the actual IP address.
-
-The first time you run **ZIMply** the index file is created. **This can take some time**. Unless you see error messages, you can assume that it all works as planned and **ZIMply** will notify you as soon as the index is fully created. The largest ZIM file (the full English Wikipedia) takes about half an hour to index on a core i7 processor, and can take over half a day on a Raspberry Pi Zero. Creating the index is a step that only needs to be done once though, and subsequent restarts of **ZIMply** will only take a matter of seconds. **ZIMply** is heavily optimised, and *will* run comfortably on a Raspberry Pi Zero.
-
-To modify the standard parameters, or use **ZIMply** in your own project, you need to modify or delete the last rule in `zimply.py` which is used to start the server. **ZIMply** comes with a very permissive license, so you can do whatever you want with the source code as long as you keep the copyright notice intact.
+As before, when you have both Python 2.* and Python 3.* installed on your system, you may need to replace `pip` with `pip3` depending on your setup.
