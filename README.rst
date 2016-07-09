@@ -4,7 +4,7 @@
 
     sudo apt-get -qq python3 python3-setuptools python3-dev python3-pip
 
-Once you have Python 3 up and running, the easiest way to install **ZIMply* is through pip:
+Once you have Python 3 up and running, the easiest way to install **ZIMply** is through pip:
 
 .. code:: bash
 
