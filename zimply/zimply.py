@@ -377,10 +377,14 @@ class ZIMFile:
 
     def _read_offset(self, index, field_name, field_format, length):
         # move to the desired position in the file
-        self.file.seek(self.header_fields[field_name] + int(length * index))
+        if index != 0xffffffff:
+            self.file.seek(self.header_fields[field_name] + int(length * index))
 
-        # and read and return the particular format
-        return unpack("<" + field_format, self.file.read(length))[0]
+            # and read and return the particular format
+            read = self.file.read(length)
+            # return unpack("<" + field_format, self.file.read(length))[0]
+            return unpack("<" + field_format, read)[0]
+        return None
 
     def _read_url_offset(self, index):
         return self._read_offset(index, "urlPtrPos", "Q", 8)
@@ -416,11 +420,12 @@ class ZIMFile:
         '''
         # find the offset for the given index
         offset = self._read_url_offset(index)
-        # read the entry at that offset
-        directory_values = self._read_directory_entry(offset)
-        # set the index in the list of values
-        directory_values["index"] = index
-        return directory_values  # and return all these directory values
+        if offset is not None:
+            # read the entry at that offset
+            directory_values = self._read_directory_entry(offset)
+            # set the index in the list of values
+            directory_values["index"] = index
+            return directory_values  # and return all these directory values
 
     def _read_blob(self, cluster_index, blob_index):
         # get the cluster offset
@@ -433,21 +438,28 @@ class ZIMFile:
     def _get_article_by_index(self, index, follow_redirect=True):
         # get the info from the DirectoryBlock at the given index
         entry = self.read_directory_entry_by_index(index)
-        if 'redirectIndex' in entry.keys():  # check if we have a Redirect Entry
-            # if we follow up on redirects, return the article it is pointing to
-            if follow_redirect:
-                logging.debug("redirect to " + str(entry['redirectIndex']))
-                return self._get_article_by_index(entry['redirectIndex'],
-                                                  follow_redirect)
-            # otherwise, simply return no data and provide the redirect index
-            # as the metadata.
-            else:
-                return Article(None, entry['namespace'], entry['redirectIndex'])
-        else:  # otherwise, we have an Article Entry
-            # get the data and return the Article
-            data = self._read_blob(entry['clusterNumber'], entry['blobNumber'])
-            return Article(data, entry['namespace'],
-                           self.mimetype_list[entry['mimetype']])
+        if entry is not None:
+            # check if we have a Redirect Entry
+            if 'redirectIndex' in entry.keys():
+                # if we follow up on redirects, return the article it is
+                # pointing to
+                if follow_redirect:
+                    logging.debug("redirect to " + str(entry['redirectIndex']))
+                    return self._get_article_by_index(entry['redirectIndex'],
+                                                    follow_redirect)
+                # otherwise, simply return no data and provide the redirect index
+                # as the metadata.
+                else:
+                    return Article(None, entry['namespace'],
+                                   entry['redirectIndex'])
+            else:  # otherwise, we have an Article Entry
+                # get the data and return the Article
+                data = self._read_blob(entry['clusterNumber'],
+                                       entry['blobNumber'])
+                return Article(data, entry['namespace'],
+                            self.mimetype_list[entry['mimetype']])
+        else:
+            return None
 
     def _get_entry_by_url(self, namespace, url, linear=False):
         if linear:  # if we are performing a linear search ...
@@ -495,13 +507,14 @@ class ZIMFile:
         if idx: # We found an index and return the Article.
             return self._get_article_by_index(
                 idx, follow_redirect=follow_redirect)  # and article
-        return None
 
     def get_main_page(self):
         '''
         Get the main page based on its index
         '''
-        return self._get_article_by_index(self.header_fields['mainPage'])
+        main_page = self._get_article_by_index(self.header_fields['mainPage'])
+        if main_page is not None:
+            return main_page
 
     def metadata(self):
         '''
@@ -575,26 +588,23 @@ class BM25:
         corpus_size = len(corpus)  # the total number of documents in the corpus
         query = [term.lower() for term in query]  # turn the query itself into lowercase
         # also turn each document into lowercase
-        corpus = [document.lower() for document in corpus]
+        corpus = [document.lower().split() for document in corpus]
 
         # Determine the average number of words in each document
         # (simply count the number of spaces) store them in a dict with
         # the hash of the document as the key and the amount of words as the
         # value.
-        num_words = dict((hash(doc), doc.count(" ") + 1) for doc in corpus)
-        avg_doc_len = sum(num_words.values()) / len(corpus)
+        doc_lens = [len(doc) for doc in corpus]
+        avg_doc_len = sum(doc_lens) / len(corpus)
         query_terms = []
 
         for term in query:
-            frequency = 0  # assume this term does not occur in any document
-            for document in corpus:
-                # ... and tally up the number of documents the term occurs in
-                frequency += 1 if document.find(term) > -1 else 0
+            frequency = sum(document.count(term) for document in corpus)
             query_terms.append((term, frequency))
 
         result = []  # prepare a list to keep the resulting scores
         # we are now ready to calculate the score of each document in the corpus
-        for document in corpus:
+        for i, document in enumerate(corpus):
             total_score = 0
             for term_frequency in query_terms:  # for every term ...
                 # ... get the term and its frequency
@@ -605,10 +615,10 @@ class BM25:
 
                 # count how often the term occurs in the document itself
                 doc_frequency = document.count(term)
-                num_words_doc = num_words[hash(document)]
+                num_words_doc = doc_lens[i]
                 doc_k1 = doc_frequency * (self.k1 + 1)
-                doc_b = doc_frequency + self.k1 * 1 - self.b + self.b * \
-                         (num_words_doc / avg_doc_len)
+                doc_b = doc_frequency + self.k1 * (1 - self.b + self.b * \
+                         (doc_lens[i] / avg_doc_len))
                 total_score += idf * (doc_k1 / doc_b)
             # once the score for all terms is summed up,
             # add this score to the result list
@@ -619,7 +629,8 @@ class BM25:
 
 #####
 # The supporting classes to provide the HTTP server. This includes the template
-#  and the actual request handler that uses the ZIM file to retrieve the desired page, images, CSS, etc.
+# and the actual request handler that uses the ZIM file to retrieve the desired
+# page, images, CSS, etc.
 #####
 
 class ZIMRequestHandler:
@@ -653,7 +664,8 @@ class ZIMRequestHandler:
         if location in ["/", "/index.htm", "/index.html", "/main.htm", "/main.html"]:
             # ... return the main page as the article
             article = ZIMRequestHandler.zim.get_main_page()
-            navigation_location = "main"
+            if article is not None:
+                navigation_location = "main"
         else:
             # The location is given as domain.com/namespace/url/parts/ ,
             # as used in the ZIM links or, alternatively, as domain.com/page.htm
