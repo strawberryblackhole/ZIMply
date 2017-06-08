@@ -549,7 +549,7 @@ class ZIMRequestHandler:
                 # q = qp.parse(" ".join(keywords))  # use the keywords to search the index
 
                 cursor = ZIMRequestHandler.reverse_index.cursor()
-                search_for = "* AND ".join(keywords) + "*"
+                search_for = "* ".join(keywords) + "*"
                 cursor.execute('''SELECT docid FROM papers WHERE title MATCH ? ''', [search_for])
 
                 results = cursor.fetchall()
