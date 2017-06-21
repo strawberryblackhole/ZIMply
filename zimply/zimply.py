@@ -6,7 +6,7 @@
 #  do have a look at https://github.com/braddockcg/internet-in-a-box .
 
 
-# Copyright (c) 2016, Kim Bauters
+# Copyright (c) 2016, Kim Bauters, Jim Lemmers
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -500,7 +500,7 @@ class ZIMFile:
                         end = middle - 1
             if found:
                 return (self.read_directory_entry_by_index(middle), middle)
-            return (None, None)
+            return None, None
 
     def get_article_by_url(self, namespace, url, follow_redirect=True):
         entry, idx = self._get_entry_by_url(namespace, url)  # get the entry
@@ -606,9 +606,7 @@ class BM25:
         # we are now ready to calculate the score of each document in the corpus
         for i, document in enumerate(corpus):
             total_score = 0
-            for term_frequency in query_terms:  # for every term ...
-                # ... get the term and its frequency
-                term, frequency = term_frequency
+            for term, frequency in query_terms:  # for every term ...
                 # determine the IDF score (numerator and denominator swapped
                 # to achieve a positive score)
                 idf = log((frequency + 0.5) / (corpus_size - frequency + 0.5))
@@ -644,6 +642,10 @@ class ZIMRequestHandler:
     template = None
     # the encoding, stored in a class variable, for the ZIM file contents
     encoding = ""
+
+
+    def __init__(self):
+        self.bm25 = BM25()
 
     def on_get(self, request, response):
         '''
@@ -747,7 +749,8 @@ class ZIMRequestHandler:
                     body = "no results found for: " + " <i>" + " ".join(
                         keywords) + "</i>"  # ... let the user know
                 else:
-                    titles = []
+                    entries = []
+                    redirects = []
                     for row in results:  # ... iterate over all the results
                         # abuse an internal function to read the directory
                         # entry by index (rather than e.g. URL)
@@ -755,16 +758,24 @@ class ZIMRequestHandler:
                         # add the full url to the entry
                         # url = entry['url']
                         # body += "<a href=\"/" + url + "\" >" + entry['title'] + "</a><br />"  # ... show its link
-                        titles.append((entry['title'], entry['url']))
+                        if entry.get('redirectIndex'):
+                            redirects.append(entry)
+                        else:
+                            entries.append(entry)
+                    indexes = set(entry['index'] for entry in entries)
+                    print(indexes)
+                    redirects = [entry for entry in redirects if
+                               entry['redirectIndex'] not in indexes]
+                    entries = [*entries, *redirects]
+                    scores = self.bm25.calculate_scores(
+                        keywords, [entry['title'] for entry in entries])
+                    weighted_result = sorted(zip(scores, entries), reverse=True,
+                                             key=lambda x: x[0])
 
-                    bm25 = BM25()
-                    scores = bm25.calculate_scores(
-                        keywords, [title[0] for title in titles])
-                    weighted = zip(scores, titles)
-                    weighted_result = sorted(weighted, reverse=True)
-
-                    for _, (title, url) in weighted_result:
-                        body += '<a href="{}">{}</a><br />'.format(url, title)
+                    for weight, entry in weighted_result:
+                        print(weight, entry)
+                        body += '<a href="{}">{}</a><br />'.format(
+                            entry['url'], entry['title'])
 
         else:  # if we did not achieve success
             response.status = falcon.HTTP_404
