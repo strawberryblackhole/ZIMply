@@ -1,4 +1,4 @@
-**ZIMply** is an easy to use, offline reader for `Wikipedia <https://www.wikipedia.org>`__ which provides access to the offline `Wikipedia <https://www.wikipedia.org>`__ through any ordinary browser. **ZIMply** is written entirely in `Python <https://www.python.org>`__ and, as the name implies, relies on `ZIM files <http://www.openzim.org/wiki/OpenZIM>`__. Each ZIM file is a bundle containing thousands of articles, images, etc. as found on websites such as `Wikipedia <https://www.wikipedia.org>`__. The format is made popular by `Kiwix <http://www.kiwix.org>`__, which is a program to read such files offline on your device. As indicated, **ZIMply** differs from `Kiwix <http://www.kiwix.org>`__ in that it provides access through the browser. It accomplishes this by running its own HTTP server. This furthermore makes it easy to install **ZIMply** on one device (a *server*, such as a `Raspberry Pi <https://www.raspberrypi.org/products/>`__) and access it on others (the *clients*). To install Python3 on a `Raspbian lite distribution <https://www.raspberrypi.org/downloads/raspbian/>`__ it suffices to install the following packages:
+**ZIMply** is an easy to use, offline reader for `Wikipedia <https://www.wikipedia.org>`__  - or any other ZIM file - which provides access to them offline through any ordinary browser. **ZIMply** is written entirely in `Python <https://www.python.org>`__ and, as the name implies, relies on `ZIM files <http://www.openzim.org/wiki/OpenZIM>`__. Each ZIM file is a bundle containing thousands of articles, images, etc. as found on websites such as `Wikipedia <https://www.wikipedia.org>`__. The format is made popular by `Kiwix <http://www.kiwix.org>`__, which is a program to read such files offline on your device. As indicated, **ZIMply** differs from `Kiwix <http://www.kiwix.org>`__ in that it provides access through the browser. It accomplishes this by running its own HTTP server. This furthermore makes it easy to install **ZIMply** on one device (a *server*, such as a `Raspberry Pi <https://www.raspberrypi.org/products/>`__) and access it on others (the *clients*). To install Python3 on a `Raspbian lite distribution <https://www.raspberrypi.org/downloads/raspbian/>`__ it suffices to install the following packages:
 
 .. code:: bash
 
@@ -14,7 +14,7 @@ When you have both Python 2.* and Python 3.* installed on your system, you may n
 
 .. code:: bash
 
-    curl -o wiki.zim https://www.mirrorservice.org/sites/download.kiwix.org/zim/wikipedia/wikipedia_en_all_2016-05.zim
+    curl -o wiki.zim https://www.mirrorservice.org/sites/download.kiwix.org/zim/wikipedia/wikipedia_en_all_novid_2017-08.zim
 
 All that's left is for you to create your own Python file to start the server:
 
