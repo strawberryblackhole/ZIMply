@@ -23,7 +23,7 @@ All that's left is for you to create your own Python file to start the server:
     from zimply import ZIMServer
     ZIMServer("wiki.zim")
 
-That's is all there is to it. Using the default settings, you can now access your offline Wiki from http://localhost:9454 - spelling out as :WIKI on a keypad. To access **ZIMply** from another system, you need to know the IP address of the system that is running **ZIMply**. You can access it by visiting http://ip_address:9454 where you replace ip_address with the actual IP address.
+That is all there is to it. Using the default settings, you can now access your offline Wiki from http://localhost:9454 - spelling out as :WIKI on a keypad. To access **ZIMply** from another system, you need to know the IP address of the system that is running **ZIMply**. You can access it by visiting http://ip_address:9454 where you replace ip_address with the actual IP address.
 
 *Note:* the first time you run **ZIMply**, it will take care of creating the index to enable searching. **This can take some time**. Unless you see error messages, you can assume that it all works as planned and **ZIMply** will notify you as soon as the index is fully created. The largest ZIM file (the full English Wikipedia) takes about half an hour to index on a core i7 processor, and can take over half a day on a Raspberry Pi Zero. Creating the index is a step that only needs to be done once though, and subsequent restarts of **ZIMply** will only take a matter of seconds. **ZIMply** is heavily optimised, and *will* run comfortably on a Raspberry Pi Zero.
 
