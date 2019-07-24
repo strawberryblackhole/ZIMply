@@ -35,6 +35,10 @@
 # policies, either expressed or implied, of the FreeBSD Project.
 
 
+from gevent import monkey, pywsgi
+# make sure to do the monkey-patching before loading the falcon package!
+monkey.patch_all()
+
 import io
 import logging
 import lzma
@@ -52,10 +56,7 @@ from struct import Struct, pack, unpack
 # non-standard required packages are gevent and falcon (for its web server),
 # as well as and make (for templating)
 from mako.template import Template
-from gevent import monkey, pywsgi
 
-# make sure to do the monkey-patching before loading the falcon package!
-monkey.patch_all()
 import falcon
 
 verbose = False
