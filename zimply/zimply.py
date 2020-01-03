@@ -821,7 +821,7 @@ class ZIMServer:
     def __init__(self, filename, index_file="",
                  template=pkg_resources.resource_filename(
                      __name__, 'template.html'),
-                 port=9454, encoding="utf-8"):
+                 ip_address="", port=9454, encoding="utf-8"):
         # create the object to access the ZIM file
         self._zim_file = ZIMFile(filename, encoding)
         # get the language of the ZIM file and convert it to ISO639_1 or
@@ -853,9 +853,10 @@ class ZIMServer:
         main = ZIMRequestHandler()
         # create a simple sync that forwards all requests; TODO: only allow GET
         app.add_sink(main.on_get, prefix='/')
-        print("up and running on http://localhost:" + str(port))
+        _address = 'localhost' if ip_address == '' else ip_address
+        print(f'up and running on http://{_address}:{port}')
         # start up the HTTP server on the desired port
-        pywsgi.WSGIServer(("", port), app).serve_forever()
+        pywsgi.WSGIServer((ip_address, port), app).serve_forever()
 
     def _bootstrap(self, index_file):
         if not os.path.exists(index_file):  # check whether the index exists
