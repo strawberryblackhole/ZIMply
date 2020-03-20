@@ -32,7 +32,8 @@ To modify the default settings, simply call ZIMServer with your desired options:
 .. code:: python
 
     from zimply import ZIMServer
-    ZIMServer("wiki.zim", index_file="index.idx", template="template.html", port=9454, encoding="utf-8")
+    ZIMServer("wiki.zim", index_file="index.idx", template="template.html", ip_address="192.168.1.200", port=9454, encoding="utf-8")
+    # please leave '192.168.1.200' to blank("") to serve the ZIM on localhost, or replace it with your real ip_address
 
 Want to tinker with the code yourself? **ZIMply** depends on `gevent <http://www.gevent.org>`__ (for networking), `falcon <https://falconframework.org>`__ (for the web service), and `mako <http://www.makotemplates.org>`__ (for templating). The easiest way to install these dependencies is by using:
 
