@@ -57,7 +57,8 @@ verbose = False
 
 ZERO = pack("B", 0)  # defined for zero terminated fields
 Field = namedtuple("Field", ["format", "field_name"])  # a tuple
-Article = namedtuple("Article", ["data", "namespace", "mimetype"])  # a triple
+articleFields = ("data", "namespace", "mimetype", "title", "url", "is_redirect")
+Article = namedtuple("Article", articleFields, defaults=(None,) * len(articleFields))  # a triple
 
 iso639_3to1 = {"ara": "ar", "dan": "da", "nld": "nl", "eng": "en",
                "fin": "fi", "fra": "fr", "deu": "de", "hun": "hu",
@@ -440,19 +441,19 @@ class ZIMFile:
                 # if we follow up on redirects, return the article it is
                 # pointing to
                 if follow_redirect:
-                    return self._get_article_by_index(entry['redirectIndex'],
+                    redirected_article =  self._get_article_by_index(entry['redirectIndex'],
                                                       follow_redirect)
+                    redirected_article.is_redirect = True
+                    return redirected_article
                 # otherwise, simply return no data
                 # and provide the redirect index as the metadata.
                 else:
-                    return Article(None, entry['namespace'],
-                                   entry['redirectIndex'])
+                    return Article(None, entry['namespace'], entry['redirectIndex'], entry['title'], entry['url'], True)
             else:  # otherwise, we have an Article Entry
                 # get the data and return the Article
                 data = self._read_blob(entry['clusterNumber'],
                                        entry['blobNumber'])
-                return Article(data, entry['namespace'],
-                               self.mimetype_list[entry['mimetype']])
+                return Article(data, entry['namespace'], self.mimetype_list[entry['mimetype']], entry['title'], entry['url'], False)
         else:
             return None
 
